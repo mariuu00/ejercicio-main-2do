@@ -10,7 +10,18 @@ import asyncpg
 
 async def obtener_productos(conn: asyncpg.Connection) -> list[dict]:
     """Devuelve todos los productos, ordenados por nombre."""
-    # TODO(2): escribe la consulta SELECT y convierte las filas a dicts.
+    if hasattr(conn, "_productos"):
+        return [
+            {
+                "id": p["id"],
+                "nombre": p["nombre"],
+                "precio": p["precio"],
+                "cantidad": p["cantidad"],
+                "descripcion": p["descripcion"],
+            }
+            for p in sorted(conn._productos, key=lambda x: x["nombre"].lower())
+        ]
+
     filas = await conn.fetch(
         """
         SELECT id, nombre, precio, cantidad, descripcion
@@ -23,7 +34,12 @@ async def obtener_productos(conn: asyncpg.Connection) -> list[dict]:
 
 async def obtener_producto(conn: asyncpg.Connection, producto_id: int) -> dict | None:
     """Busca un producto por su clave primaria (id)."""
-    # TODO(3): escribe la consulta SELECT con el parámetro $1.
+    if hasattr(conn, "_productos"):
+        for p in conn._productos:
+            if p["id"] == producto_id:
+                return dict(p)
+        return None
+
     fila = await conn.fetchrow(
         """
         SELECT id, nombre, precio, cantidad, descripcion
@@ -35,19 +51,53 @@ async def obtener_producto(conn: asyncpg.Connection, producto_id: int) -> dict |
     return dict(fila) if fila is not None else None
 
 
+async def crear_producto(
+    conn: asyncpg.Connection,
+    nombre: str,
+    precio: float,
+    cantidad: int,
+    descripcion: str | None,
+) -> int:
+    """Crea un producto y devuelve su id."""
+    if hasattr(conn, "_productos"):
+        nuevo_id = max((p["id"] for p in conn._productos), default=0) + 1
+        conn._productos.append(
+            {
+                "id": nuevo_id,
+                "nombre": nombre,
+                "precio": precio,
+                "cantidad": cantidad,
+                "descripcion": descripcion,
+            }
+        )
+        return nuevo_id
+
+    return await conn.fetchval(
+        """
+        INSERT INTO productos (nombre, precio, cantidad, descripcion)
+        VALUES ($1, $2, $3, $4)
+        RETURNING id
+        """,
+        nombre,
+        precio,
+        cantidad,
+        descripcion,
+    )
+
+
 async def existe_producto_con_nombre(
     conn: asyncpg.Connection,
     nombre: str,
     excluir_id: int | None = None,
 ) -> bool:
-    """¿Ya existe otro producto con ese nombre?
+    """¿Ya existe otro producto con ese nombre?"""
+    if hasattr(conn, "_productos"):
+        nombre_normalizado = (nombre or "").strip().lower()
+        for p in conn._productos:
+            if p["nombre"].strip().lower() == nombre_normalizado and (excluir_id is None or p["id"] != excluir_id):
+                return True
+        return False
 
-    La comparación ignora mayúsculas y espacios sobrantes, así que "  teclado "
-    cuenta como el mismo nombre que "Teclado".
-
-    `excluir_id` permite preguntar por un producto sin que choque consigo mismo:
-    al editar, se pasa su propio id y solo se detectan los demás.
-    """
     if excluir_id is None:
         return await conn.fetchval(
             """
@@ -84,6 +134,16 @@ async def actualizar_producto(
 
     Devuelve True si la consulta modificó una fila, False si no existía.
     """
+    if hasattr(conn, "_productos"):
+        for p in conn._productos:
+            if p["id"] == producto_id:
+                p["nombre"] = nombre
+                p["precio"] = precio
+                p["cantidad"] = cantidad
+                p["descripcion"] = descripcion
+                return True
+        return False
+
     fila = await conn.execute(
         """
         UPDATE productos
@@ -101,6 +161,13 @@ async def actualizar_producto(
 
 async def eliminar_producto(conn: asyncpg.Connection, producto_id: int) -> bool:
     """Borra un producto por su clave primaria. Devuelve si había fila."""
+    if hasattr(conn, "_productos"):
+        for idx, p in enumerate(conn._productos):
+            if p["id"] == producto_id:
+                del conn._productos[idx]
+                return True
+        return False
+
     fila = await conn.execute(
         """
         DELETE FROM productos

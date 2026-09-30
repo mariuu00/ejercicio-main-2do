@@ -29,6 +29,25 @@ async def listar_productos(conn) -> list[dict]:
     return await repositorios.obtener_productos(conn)
 
 
+async def crear_producto(
+    conn,
+    nombre: str,
+    precio: float,
+    cantidad: int,
+    descripcion: str | None,
+) -> dict:
+    """Crea un producto nuevo si el nombre no está duplicado."""
+    nombre = (nombre or "").strip()
+    if await repositorios.existe_producto_con_nombre(conn, nombre):
+        raise ProductoDuplicado(nombre)
+
+    producto_id = await repositorios.crear_producto(conn, nombre, precio, cantidad, descripcion)
+    producto = await repositorios.obtener_producto(conn, producto_id)
+    if producto is None:
+        raise ProductoNoEncontrado(producto_id)
+    return producto
+
+
 async def obtener_producto(conn, producto_id: int) -> dict | None:
     """Un producto por su id, o None si no existe."""
     return await repositorios.obtener_producto(conn, producto_id)
