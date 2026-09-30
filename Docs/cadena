@@ -1,0 +1,1 @@
+postgresql://usuario:contrasena@host:5432/basedatos?sslmode=require
